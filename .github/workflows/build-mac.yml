@@ -12,7 +12,14 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    # Universal binaries come out of either runner; two runner types so one busy queue
+    # (arm64 capacity is often short) doesn't block the build.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       ART: build/BurialVoice_artefacts/Release
     steps:
@@ -64,13 +71,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BurialVoice-macOS
+          name: BurialVoice-macOS-built-on-${{ matrix.os }}
           path: dist/BurialVoice-macOS.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-output
+          name: test-output-${{ matrix.os }}
           path: test-out
 
       - name: Publish release
@@ -78,3 +85,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/BurialVoice-macOS.zip
+          overwrite_files: true
