@@ -22,14 +22,14 @@
 
 #ifdef _WIN32
  #include <windows.h>
- using Handle = HMODULE;
- static Handle openLib (const char* p) { return LoadLibraryA (p); }
- static void* sym (Handle h, const char* n) { return (void*) GetProcAddress (h, n); }
+ using LibHandle = HMODULE;
+ static LibHandle openLib (const char* p) { return LoadLibraryA (p); }
+ static void* sym (LibHandle h, const char* n) { return (void*) GetProcAddress (h, n); }
 #else
  #include <dlfcn.h>
- using Handle = void*;
- static Handle openLib (const char* p) { return dlopen (p, RTLD_NOW | RTLD_LOCAL); }
- static void* sym (Handle h, const char* n) { return dlsym (h, n); }
+ using LibHandle = void*;
+ static LibHandle openLib (const char* p) { return dlopen (p, RTLD_NOW | RTLD_LOCAL); }
+ static void* sym (LibHandle h, const char* n) { return dlsym (h, n); }
 #endif
 
 using namespace Steinberg;
@@ -48,7 +48,7 @@ int main (int argc, char** argv)
 {
     if (argc < 2) return fail ("usage: MiniHost <path to plugin binary>");
 
-    Handle lib = openLib (argv[1]);
+    LibHandle lib = openLib (argv[1]);
     if (! lib)
     {
 #ifndef _WIN32
