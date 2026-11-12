@@ -1,0 +1,80 @@
+name: macOS build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      ART: build/BurialVoice_artefacts/Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch JUCE 8.0.4
+        run: git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Configure (universal arm64 + x86_64)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DBV_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j "$(sysctl -n hw.ncpu)"
+
+      - name: Check architectures
+        run: |
+          lipo -archs "$ART/VST3/Burial Voice.vst3/Contents/MacOS/Burial Voice"
+          lipo -archs "$ART/AU/Burial Voice.component/Contents/MacOS/Burial Voice"
+
+      - name: Offline DSP tests
+        run: |
+          mkdir -p test-out
+          ./build/BVTest_artefacts/Release/BVTest test-out
+
+      - name: Load the VST3 in a minimal host
+        run: |
+          SDK=JUCE/modules/juce_audio_processors/format_types/VST3_SDK
+          clang++ -std=c++17 -I"$SDK" Tests/MiniHost.cpp "$SDK/pluginterfaces/base/funknown.cpp" -framework CoreFoundation -o minihost
+          ./minihost "$ART/VST3/Burial Voice.vst3/Contents/MacOS/Burial Voice"
+
+      - name: Validate the Audio Unit (auval)
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ART/AU/Burial Voice.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 3
+          auval -v aufx Brvc Nbau
+
+      - name: Package
+        run: |
+          OUT="dist/Burial Voice macOS"
+          mkdir -p "$OUT"
+          cp -R "$ART/VST3/Burial Voice.vst3" "$ART/AU/Burial Voice.component" "$OUT/"
+          codesign --force --deep -s - "$OUT/Burial Voice.vst3"
+          codesign --force --deep -s - "$OUT/Burial Voice.component"
+          cp "packaging/mac/Install Burial Voice.command" README.md "$OUT/"
+          chmod +x "$OUT/Install Burial Voice.command"
+          (cd dist && ditto -c -k --keepParent "Burial Voice macOS" BurialVoice-macOS.zip)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BurialVoice-macOS
+          path: dist/BurialVoice-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output
+          path: test-out
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BurialVoice-macOS.zip
